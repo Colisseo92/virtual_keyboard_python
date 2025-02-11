@@ -7,10 +7,13 @@ import numpy as np
 import asyncio
 import base64
 from BlinkDetector import detectBlink
+from wordPredictor import init_module,getPredictions
 
 app = FastAPI() #App declaration
 
 latest_frame = None
+is_searching = False
+last_word = ""
 
 @app.get("/")
 async def get_home():
@@ -63,12 +66,19 @@ async def websocket_endpoint(websocket: WebSocket):
     
 @app.websocket("/text")
 async def text_endpoint(websocket: WebSocket):
+    global is_searching, last_word
     await websocket.accept()
     print("Text connection accepted!")
     try:
         while True:
-            text = await websocket.receive_bytes()
+            text = await websocket.receive_text()
             print(f"TEXT: {text}")
+            if is_searching == False and last_word != text:
+                is_searching = True
+                await websocket.send_json(getPredictions(text))
+                print("Searched ended")
+                last_word = text
+                is_searching = False
     except Exception as e:
         print(f'Text error: {e}')     
 
@@ -79,4 +89,5 @@ async def get():
 
 if __name__ == "__main__":
     import uvicorn
+    init_module()
     uvicorn.run(app,host="127.0.0.1",port=8000)
