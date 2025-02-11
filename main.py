@@ -1,86 +1,81 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse,StreamingResponse
+import asyncio
 import cv2
 import mediapipe as mp 
 import numpy as np
 import asyncio
+import base64
 from BlinkDetector import detectBlink
 
 app = FastAPI() #App declaration
 
-ear = None
-total = None
+latest_frame = None
 
-latest_frame = None #current image
-
-@app.websocket('/')
+@app.get("/")
 async def get_home():
+    """Serve the main HTML page with video streaming."""
     return HTMLResponse(content="""
     <html>
     <head>
-        <title>Live Video From Flutter App</title>
+        <title>Live Video Stream</title>
     </head>
     <body>
-        <h1>Live Camera From Flutter</h1>
-        <img id="video-stream src="/video-stream" style="width:80%; border:1px solid black;" />
+        <h1>Live Video Stream</h1>
+        <img id="video-stream" src="/video-stream" style="width:80%; border:1px solid black;" />
     </body>
-    </html>                  
+    </html>
     """)
-    
-@app.get('/')
-async def get_home():
-    return HTMLResponse(content="""
-    <html>
-    <head>
-        <title>Live Video From Flutter App</title>
-    </head>
-    <body>
-        <h1>Live Camera From Flutter</h1>
-        <img id="video-stream src="/video-stream" style="width:80%; border:1px solid black;" />
-    </body>
-    </html>                  
-    """)
-    
+
 @app.get("/video-stream")
 async def video_stream():
+    """Stream the latest video frame."""
     async def frame_generator():
-        global ear,total
         global latest_frame
         while True:
             if latest_frame is not None:
-                frame_detected,ear,total = detectBlink(latest_frame)
-                _,encoded_frame = cv2.imencode('.jpg',frame_detected)
-                yield(b"--frame\r\n"
-                      b"Content-Type: image/jpeg\r\n\r\n" +
-                      bytearray(encoded_frame) + b"\r\n")
-            await asyncio.sleep(0.03) #30FPS    
-    return StreamingResponse(frame_generator(),media_type="multipart/x-mixed-replace; boundary=frame")
+                # Encode the frame to JPEG and yield it
+                _, encoded_frame = cv2.imencode(".jpg", latest_frame)
+                yield (b"--frame\r\n"
+                       b"Content-Type: image/jpeg\r\n\r\n" +
+                       bytearray(encoded_frame) + b"\r\n")
+            await asyncio.sleep(0.01)  # Approx 30 FPS
+
+    return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     global latest_frame
     await websocket.accept()
-    print("Webscocket connection established successfully !")
-    
+    print("Connection accepted !")
     try:
         while True:
             data = await websocket.receive_bytes()
-            frame = np.frombuffer(data,dtype=np.uint8)
-            frame=cv2.imdecode(frame,cv2.IMREAD_COLOR)
             
-            if frame is None:
-                print("Can't decode Image")
-                continue
+            frame = np.frombuffer(data, dtype=np.uint8)
+            image = cv2.imdecode(frame,cv2.IMREAD_COLOR)
+            #print(f"IMAGE: {image}")
+            latest_frame = image
             
-            latest_frame = frame
-            await websocket.send_text(f"EAR: {ear} | Total: {total}")
-    except WebSocketDisconnect:
-        print("WebSocket Disconnected")
     except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        print("Websocket connection closed")
-        await websocket.close()
+        print(f'{e}')
+    
+@app.websocket("/text")
+async def text_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("Text connection accepted!")
+    try:
+        while True:
+            text = await websocket.receive_bytes()
+            print(f"TEXT: {text}")
+    except Exception as e:
+        print(f'Text error: {e}')     
+
+        
+@app.get('/')
+async def get():
+    return HTMLResponse('WebSocket server is running')
 
 if __name__ == "__main__":
     import uvicorn
