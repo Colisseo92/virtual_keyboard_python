@@ -38,6 +38,14 @@ async def video_stream():
         while True:
             if latest_frame is not None:
                 # Encode the frame to JPEG and yield it
+                frame_rgb = cv2.cvtColor(latest_frame, cv2.COLOR_BGR2RGB)
+                results = face_mesh.process(frame_rgb)
+                if results.multi_face_landmarks:
+                    for face_landmarks in results.multi_face_landmarks:
+                        for landmark in face_landmarks.landmark:
+                            h, w, _ = latest_frame.shape
+                            x, y = int(landmark.x * w), int(landmark.y * h)
+                            cv2.circle(latest_frame, (x, y), 1, (0, 255, 0), -1)
                 _, encoded_frame = cv2.imencode(".jpg", latest_frame)
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n\r\n" +
