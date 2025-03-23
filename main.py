@@ -6,7 +6,8 @@ import mediapipe as mp
 import numpy as np
 import asyncio
 import base64
-from wordPredictor import init_module,getPredictions
+from wordPredictor import init_module,getPredictions,init_model,getGptPrediction
+from wordCompletion import init,get_close_matches,getCompletion
 
 app = FastAPI() #App declaration
 
@@ -82,11 +83,18 @@ async def text_endpoint(websocket: WebSocket):
     try:
         while True:
             text = await websocket.receive_text()
-            print(f"TEXT: {text}")
             if is_searching == False and last_word != text:
                 is_searching = True
-                await websocket.send_json(getPredictions(text))
-                print("Searched ended")
+                splited = text.split(" ")
+                print(f"TEXT: {text}")
+                print(f"SPLITTED : {splited}")
+                if splited[-1] == "":
+                    #await websocket.send_json(getPredictions(splited[-2]))
+                    await websocket.send_json(getGptPrediction(text))
+                    print("Searched ended")
+                else:
+                    await websocket.send_json(getCompletion(splited[-1]))
+                    print("Searched ended")
                 last_word = text
                 is_searching = False
     except Exception as e:
@@ -99,5 +107,6 @@ async def get():
 
 if __name__ == "__main__":
     import uvicorn
-    init_module()
+    init_model()
+    init()
     uvicorn.run(app,host="127.0.0.1",port=8000)
